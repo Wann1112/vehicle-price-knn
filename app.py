@@ -1,82 +1,94 @@
-import streamlit as st
+# app.py
+import json
+import joblib
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import classification_report, accuracy_score
+import streamlit as st
 
-# Judul aplikasi
-st.title("Klasifikasi Tingkat Harga Kendaraan - KNN")
+from config import MODEL_PATH, SCALER_PATH, ENCODER_PATH, FEATURES_PATH, PRICE_LABELS
+from preprocessing import transform_with_encoders, apply_scaler
 
-# Mengupload file CSV
-uploaded_file = st.file_uploader("Upload Dataset CSV", type=["csv"])
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.write("Preview Data:", df.head())
+st.set_page_config(page_title="Klasifikasi Harga Kendaraan", page_icon="🚗", layout="centered")
+st.title("🚗 Klasifikasi Tingkat Harga Kendaraan")
+st.caption("Random Forest dengan Optimasi Hyperparameter (RandomizedSearchCV)")
 
-    # --- Preprocessing ---
-    st.subheader("Preprocessing Data")
-    st.write("Jumlah Data:", df.shape)
+@st.cache_resource
+def load_artifacts():
+    model = joblib.load(MODEL_PATH)
+    scaler = joblib.load(SCALER_PATH)
+    encoders = joblib.load(ENCODER_PATH)
+    with open(FEATURES_PATH, "r") as f:
+        feature_names = json.load(f)
+    return model, scaler, encoders, feature_names
 
-    # Pastikan ada kolom 'Price'
-    if 'Price' in df.columns:
-        # Membuat kategori harga: Murah, Sedang, Mahal, Sangat Mahal
-        bins = [0, 20000, 40000, 60000, df['Price'].max()]
-        labels = ['Murah', 'Sedang', 'Mahal', 'Sangat Mahal']
-        df['PriceCategory'] = pd.cut(df['Price'], bins=bins, labels=labels)
+def preprocess_inference(df: pd.DataFrame, encoders, scaler, feature_names):
+    # Ensure required columns exist
+    for col in feature_names:
+        if col not in df.columns:
+            df[col] = np.nan
 
-        st.write("Distribusi Kategori Harga:", df['PriceCategory'].value_counts())
+    # Basic imputation (keep simple for app)
+    num_cols = df.select_dtypes(include=["int64", "float64"]).columns
+    cat_cols = df.select_dtypes(include=["object"]).columns
+    for col in num_cols:
+        df[col] = df[col].fillna(df[col].median())
+    for col in cat_cols:
+        df[col] = df[col].fillna(df[col].mode().iloc[0])
 
-        # Pisahkan fitur dan target
-        X = df.drop(['Price', 'PriceCategory'], axis=1)
-        y = df['PriceCategory']
+    # Transform categoricals
+    df_enc = transform_with_encoders(df.copy(), encoders)
 
-        # Encode target
-        le = LabelEncoder()
-        y = le.fit_transform(y)
+    # Align column order
+    df_enc = df_enc[feature_names]
 
-        # One-hot encoding untuk fitur kategorikal
-        X = pd.get_dummies(X)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+    # Scale
+    X_scaled = apply_scaler(df_enc, scaler)
+    return X_scaled
 
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_scaled, y, test_size=0.2, random_state=42
+# Load artifacts
+try:
+    model, scaler, encoders, feature_names = load_artifacts()
+except Exception as e:
+    st.error("Model belum tersedia. Jalankan train_model.py dan commit artifacts ke repo.")
+    st.stop()
+
+tab1, tab2 = st.tabs(["Prediksi satu kendaraan", "Upload CSV untuk batch prediksi"])
+
+with tab1:
+    st.subheader("Input spesifikasi kendaraan")
+    # Minimal set; adjust to your dataset columns present in feature_names
+    # Use text inputs for categoricals and numbers; Streamlit will coerce
+    inputs = {}
+    for col in feature_names:
+        if col.lower() in ["price", "price_category"]:
+            continue
+        # Heuristic: numeric or text input
+        if "year" in col.lower() or "kilometres" in col.lower() or "engine" in col.lower() or "cylinders" in col.lower() or "capacity" in col.lower():
+            val = st.number_input(f"{col}", value=0.0, step=1.0)
+        else:
+            val = st.text_input(f"{col}", value="")
+        inputs[col] = val
+
+    if st.button("Prediksi kategori harga"):
+        df_in = pd.DataFrame([inputs])
+        X_scaled = preprocess_inference(df_in, encoders, scaler, feature_names)
+        pred = model.predict(X_scaled)[0]
+        st.success(f"Prediksi kategori harga: {pred}")
+
+with tab2:
+    st.subheader("Unggah CSV dengan kolom fitur")
+    file = st.file_uploader("Pilih file CSV", type=["csv"])
+    if file is not None:
+        df = pd.read_csv(file)
+        st.write("Preview data:", df.head())
+        X_scaled = preprocess_inference(df, encoders, scaler, feature_names)
+        preds = model.predict(X_scaled)
+        out = df.copy()
+        out["Predicted_Price_Category"] = preds
+        st.write("Hasil prediksi:", out.head())
+        st.download_button(
+            "Unduh hasil (CSV)",
+            data=out.to_csv(index=False).encode("utf-8"),
+            file_name="prediksi_harga_kendaraan.csv",
+            mime="text/csv"
         )
-
-        # --- Model KNN ---
-        st.subheader("Training Model KNN")
-        k = st.slider("Pilih jumlah tetangga (k)", 1, 20, 5)
-        knn = KNeighborsClassifier(n_neighbors=k)
-        knn.fit(X_train, y_train)
-
-        # Prediksi
-        y_pred = knn.predict(X_test)
-
-        # Evaluasi
-        acc = accuracy_score(y_test, y_pred)
-        st.write(f"🎯 Akurasi Model: {acc:.2f}")
-        st.text("Classification Report:")
-        st.text(classification_report(y_test, y_pred, target_names=le.classes_))
-
-        # --- Prediksi Input Baru ---
-        st.subheader("Prediksi Data Baru")
-        st.write("Masukkan fitur sesuai dataset:")
-        input_data = {}
-        for col in df.drop(['Price', 'PriceCategory'], axis=1).columns:
-            val = st.text_input(f"{col}")
-            input_data[col] = val
-
-        if st.button("Prediksi"):
-            try:
-                input_df = pd.DataFrame([input_data])
-                input_df = pd.get_dummies(input_df)
-                input_df = input_df.reindex(columns=X.columns, fill_value=0)
-                input_scaled = scaler.transform(input_df)
-                pred = knn.predict(input_scaled)
-                st.success(f"Kategori Harga Prediksi: {le.inverse_transform(pred)[0]}")
-            except Exception as e:
-                st.error(f"Error: {e}")
-    else:
-        st.error("Kolom 'Price' tidak ditemukan. Pastikan dataset punya kolom harga numerik.")
