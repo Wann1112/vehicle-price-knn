@@ -1,9 +1,20 @@
-# Vehicle Price Classification with KNN
+# Vehicle Price Classification with XGBoost
 
-A Streamlit app to classify vehicle price categories using K-Nearest Neighbors (KNN).
+A machine learning project to classify car prices into:
+- Murah
+- Sedang
+- Mahal
+- Sangat Mahal
 
-## How to Run
-1. Clone repository:
-   ```bash
-   git clone https://github.com/username/vehicle-price-knn.git
-   cd vehicle-price-knn
+### Tech Stack
+- Python
+- XGBoost
+- Streamlit
+- scikit-learn
+
+### How to Run
+
+```bash
+pip install -r requirements.txt
+python train_model.py
+streamlit run app.py
