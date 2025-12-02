@@ -6,9 +6,9 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report, accuracy_score
 
 # Judul aplikasi
-st.title("Klasifikasi Kategori Harga Kendaraan - KNN")
+st.title("Klasifikasi Tingkat Harga Kendaraan - KNN")
 
-# Upload file CSV
+# Mengupload file CSV
 uploaded_file = st.file_uploader("Upload Dataset CSV", type=["csv"])
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
@@ -18,17 +18,25 @@ if uploaded_file is not None:
     st.subheader("Preprocessing Data")
     st.write("Jumlah Data:", df.shape)
 
-    # Misalnya kolom target adalah 'PriceCategory'
-    if 'PriceCategory' in df.columns:
-        X = df.drop('PriceCategory', axis=1)
+    # Pastikan ada kolom 'Price'
+    if 'Price' in df.columns:
+        # Membuat kategori harga: Murah, Sedang, Mahal, Sangat Mahal
+        bins = [0, 20000, 40000, 60000, df['Price'].max()]
+        labels = ['Murah', 'Sedang', 'Mahal', 'Sangat Mahal']
+        df['PriceCategory'] = pd.cut(df['Price'], bins=bins, labels=labels)
+
+        st.write("Distribusi Kategori Harga:", df['PriceCategory'].value_counts())
+
+        # Pisahkan fitur dan target
+        X = df.drop(['Price', 'PriceCategory'], axis=1)
         y = df['PriceCategory']
 
-        # Encode target jika kategori
+        # Encode target
         le = LabelEncoder()
         y = le.fit_transform(y)
 
-        # Handle data numerik
-        X = pd.get_dummies(X)  # one-hot encoding untuk kolom kategorikal
+        # One-hot encoding untuk fitur kategorikal
+        X = pd.get_dummies(X)
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
@@ -56,7 +64,7 @@ if uploaded_file is not None:
         st.subheader("Prediksi Data Baru")
         st.write("Masukkan fitur sesuai dataset:")
         input_data = {}
-        for col in df.drop('PriceCategory', axis=1).columns:
+        for col in df.drop(['Price', 'PriceCategory'], axis=1).columns:
             val = st.text_input(f"{col}")
             input_data[col] = val
 
@@ -71,4 +79,4 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"Error: {e}")
     else:
-        st.error("Kolom 'PriceCategory' tidak ditemukan. Pastikan dataset memiliki target kategori harga.")
+        st.error("Kolom 'Price' tidak ditemukan. Pastikan dataset punya kolom harga numerik.")
