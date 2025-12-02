@@ -9,8 +9,8 @@ from sklearn.metrics import classification_report, accuracy_score
 st.title("Klasifikasi Kategori Harga Kendaraan - KNN")
 
 # Upload file CSV
-uploaded_file = st.file_uploader("C:\Users\deswa\Documents\COLLEGE\SEMESTER 3\Data Analysis\Australian Vehicle Prices.csv", type=["csv"])
-if uploaded_file is not None:
+uploaded_file = st.file_uploader("Upload Dataset CSV", type=["csv"])
+    if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.write("Preview Data:", df.head())
 
